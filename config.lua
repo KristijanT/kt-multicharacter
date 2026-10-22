@@ -2,10 +2,25 @@ Config = {}
 
 Config.Framework = 'auto'          -- 'auto' | 'esx' | 'qb' | 'qbox'
 Config.Locale    = 'sr'            -- 'sr' | 'en'
-Config.Preset    = 'classic'       -- 'classic' (lista levo) | 'modern' (kartice dole)
+Config.Preset    = 'interactive'   -- 'classic' | 'modern' | 'interactive'
 Config.Accent    = '#7c5cff'
 Config.Currency  = '$'
 Config.StoreURL  = 'https://tvoj-shop.tebex.io'
+
+-- Muzika (stavi SVOJE ili royalty-free .ogg fajlove u web/audio/)
+-- VAŽNO za prodaju: ne isporučuj pesme za koje nemaš licencu.
+Config.Music = {
+    enabled = true,
+    volume = 0.25,
+    tracks = {
+        { label = 'Midnight Drive', file = 'audio/track1.ogg' },
+        { label = 'City Lights',    file = 'audio/track2.ogg' },
+        { label = 'Neon Dreams',    file = 'audio/track3.ogg' },
+    },
+}
+
+-- Efekti kamere u meniju
+Config.CameraEffects = { 'none', 'filmic', 'vignette', 'cinema' }
 
 -- Slotovi
 Config.MaxSlots      = 5
@@ -70,12 +85,22 @@ Config.PauseWeatherSync = true
 -- QBCore: neke verzije ne okidaju loaded event bez multichar resursa
 Config.QBFireLoadedEvents = true
 
--- Scene (podesi koordinate sa /ktscene)
+-- Scene (koordinate podesi preko /ktscene)
+-- slots   = pozicije 5 likova za Interactive preset
+-- camWide = šira kamera za Interactive preset
 Config.Scenes = {
     {
         name = 'airport', enabled = true, season = nil,
         ped = vec4(-1037.6, -2738.0, 20.17, 330.0),
         cam = { coords = vec3(-1036.2, -2735.6, 20.9), lookAt = vec3(-1037.6, -2738.0, 20.8), fov = 40.0 },
+        camWide = { coords = vec3(-1037.5, -2733.0, 21.2), lookAt = vec3(-1037.6, -2738.0, 20.9), fov = 55.0 },
+        slots = {
+            vec4(-1040.2, -2739.6, 20.17, 320.0),
+            vec4(-1038.9, -2738.8, 20.17, 325.0),
+            vec4(-1037.6, -2738.0, 20.17, 330.0),
+            vec4(-1036.3, -2737.2, 20.17, 335.0),
+            vec4(-1035.0, -2736.4, 20.17, 340.0),
+        },
         intro = { coords = vec3(-1010.0, -2700.0, 35.0), lookAt = vec3(-1037.6, -2738.0, 21.0), fov = 60.0, time = 5000 },
         time = { 18, 30 }, weather = 'EXTRASUNNY',
         props = {}, vehicles = {}, npcs = {},
@@ -84,6 +109,14 @@ Config.Scenes = {
         name = 'xmas', enabled = true, season = 'xmas',
         ped = vec4(-1037.6, -2738.0, 20.17, 330.0),
         cam = { coords = vec3(-1036.2, -2735.6, 20.9), lookAt = vec3(-1037.6, -2738.0, 20.8), fov = 40.0 },
+        camWide = { coords = vec3(-1037.5, -2733.0, 21.2), lookAt = vec3(-1037.6, -2738.0, 20.9), fov = 55.0 },
+        slots = {
+            vec4(-1040.2, -2739.6, 20.17, 320.0),
+            vec4(-1038.9, -2738.8, 20.17, 325.0),
+            vec4(-1037.6, -2738.0, 20.17, 330.0),
+            vec4(-1036.3, -2737.2, 20.17, 335.0),
+            vec4(-1035.0, -2736.4, 20.17, 340.0),
+        },
         time = { 22, 0 }, weather = 'XMAS',
         props = { { model = 'prop_xmas_tree_int', coords = vec3(-1035.0, -2739.5, 19.2), heading = 0.0 } },
         vehicles = {}, npcs = {},

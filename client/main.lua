@@ -1,5 +1,5 @@
-local S = { active = false, cams = {}, curCam = nil, ents = {}, ped = nil, scene = nil,
-            chars = {}, spawnList = {}, spawn = nil, loaded = false, selected = nil }
+local S = { active = false, cams = {}, curCam = nil, ents = {}, ped = nil, peds = {}, scene = nil,
+            chars = {}, data = nil, spawnList = {}, spawn = nil, loaded = false, selected = nil }
 local L = Config.Lang[Config.Locale] or Config.Lang.en
 
 local function nui(action, data) SendNUIMessage({ action = action, data = data }) end
@@ -84,15 +84,15 @@ local function moveCamTo(c)
     S.cams[#S.cams + 1] = new
 end
 
----------------------------------------------------------------- Preview ped
+---------------------------------------------------------------- Preview peds
 local function clearPed()
     if S.ped and DoesEntityExist(S.ped) then DeleteEntity(S.ped) end
     S.ped = nil
+    for _, p in pairs(S.peds) do if DoesEntityExist(p) then DeleteEntity(p) end end
+    S.peds = {}
 end
 
-local function showPed(ch)
-    clearPed()
-    local p = S.scene.ped
+local function spawnPed(ch, p)
     local default = ch.gender == 'f' and 'mp_f_freemode_01' or 'mp_m_freemode_01'
     local okSkin, app = pcall(json.decode, ch.skin or '{}')
     local modelName = (okSkin and type(app) == 'table' and app.model) or default
@@ -106,7 +106,35 @@ local function showPed(ch)
     SetBlockingOfNonTemporaryEvents(ped, true)
     Hooks.ApplyAppearance(ped, ch)
     if S.scene.pedScenario then TaskStartScenarioInPlace(ped, S.scene.pedScenario, 0, true) end
-    S.ped = ped
+    return ped
+end
+
+local function showPed(ch)
+    clearPed()
+    S.ped = spawnPed(ch, S.scene.ped)
+end
+
+local function slotCoords(i)
+    local s = S.scene.slots and S.scene.slots[i]
+    if s then return s end
+    local p = S.scene.ped
+    return vec4(p.x + (i - 3) * 1.2, p.y, p.z, p.w)
+end
+
+local function showAll()
+    clearPed()
+    for _, c in ipairs(S.chars) do S.peds[c.id] = spawnPed(c, slotCoords(c.slot)) end
+end
+
+-- Kamera je statična, pa se pozicije labela računaju jednom (nema petlje)
+local function projectSlots()
+    local out = {}
+    for i = 1, Config.MaxSlots do
+        local c = slotCoords(i)
+        local ok, x, y = GetScreenCoordFromWorldCoord(c.x, c.y, c.z + 1.05)
+        if ok then out[i] = { x = x, y = y } end
+    end
+    return out
 end
 
 ---------------------------------------------------------------- Cleanup
@@ -118,6 +146,7 @@ local function cleanup()
     for _, c in ipairs(S.cams) do if DoesCamExist(c) then DestroyCam(c, false) end end
     S.cams, S.curCam = {}, nil
     ClearFocus()
+    ClearTimecycleModifier()
     SetForceVehicleTrails(false)
     SetForcePedFootstepsTracks(false)
     S.active = false
@@ -144,6 +173,28 @@ local function trimChars(list)
     return out
 end
 
+local Effects = { none = false, filmic = 'NG_filmic01', vignette = 'rply_vignette', cinema = 'cinema' }
+
+local function applyEffect(name)
+    ClearTimecycleModifier()
+    local tc = Effects[name]
+    if tc then
+        SetTimecycleModifier(tc)
+        SetTimecycleModifierStrength(0.8)
+    end
+end
+
+local function getSettings()
+    local raw = GetResourceKvpString('kt_mc_settings')
+    local ok, s = pcall(json.decode, raw or '{}')
+    s = (ok and type(s) == 'table') and s or {}
+    return {
+        volume = tonumber(s.volume) or Config.Music.volume,
+        track = tonumber(s.track) or 1,
+        effect = s.effect or 'none',
+    }
+end
+
 local function uiConfig(data)
     return {
         preset = Config.Preset, accent = Config.Accent, currency = Config.Currency, storeUrl = Config.StoreURL,
@@ -151,7 +202,16 @@ local function uiConfig(data)
         birth = Config.Birth, nationalities = Config.Nationalities,
         items = Config.StartingItems.enabled and Config.StartingItems.items or {},
         budget = Config.StartingItems.budget,
+        music = Config.Music, effects = Config.CameraEffects, settings = getSettings(),
     }
+end
+
+local function openUI(action)
+    SetNuiFocus(true, true)
+    nui(action or 'open', {
+        cfg = uiConfig(S.data), chars = trimChars(S.chars),
+        world = Config.Preset == 'interactive' and projectSlots() or nil,
+    })
 end
 
 local function startSelection()
@@ -178,7 +238,12 @@ local function startSelection()
 
     buildScene(S.scene)
 
-    local main = makeCam(S.scene.cam)
+    S.data = lib.callback.await('kt-mc:data', false)
+    S.chars = S.data.chars
+    if Config.Preset == 'interactive' then showAll() end
+
+    local camCfg = (Config.Preset == 'interactive' and S.scene.camWide) or S.scene.cam
+    local main = makeCam(camCfg)
     local wait = 0
     if S.scene.intro then
         local intro = makeCam(S.scene.intro)
@@ -193,12 +258,10 @@ local function startSelection()
         DoScreenFadeIn(800)
     end
     S.curCam = main
+    applyEffect(getSettings().effect)
 
-    local data = lib.callback.await('kt-mc:data', false)
-    S.chars = data.chars
-    Wait(wait)
-    SetNuiFocus(true, true)
-    nui('open', { cfg = uiConfig(data), chars = trimChars(S.chars) })
+    Wait(wait + 100)
+    openUI('open')
 end
 
 local function findChar(id)
@@ -221,20 +284,37 @@ local function doLogin(ch)
     clearPed()
     S.loaded = false
     if not lib.callback.await('kt-mc:play', false, ch.id) then
+        -- login nije uspeo: vrati igrača na selekciju
+        if Config.Preset == 'interactive' then showAll() end
         DoScreenFadeIn(500)
-        SetNuiFocus(true, true)
-        nui('open', { cfg = uiConfig({ slots = 1, canDelete = true }), chars = trimChars(S.chars) })
+        openUI('open')
     end
 end
 
 ---------------------------------------------------------------- NUI callbacks
 RegisterNUICallback('select', function(d, cb)
     local ch = findChar(d.id)
-    if ch then showPed(ch) end
+    if not ch then return cb(0) end
+    if Config.Preset == 'interactive' then
+        for id, p in pairs(S.peds) do
+            if DoesEntityExist(p) then
+                if id == d.id then ResetEntityAlpha(p) else SetEntityAlpha(p, 90, false) end
+            end
+        end
+    else
+        showPed(ch)
+    end
     cb(1)
 end)
 
-RegisterNUICallback('empty', function(_, cb) clearPed() cb(1) end)
+RegisterNUICallback('empty', function(_, cb)
+    if Config.Preset == 'interactive' then
+        for _, p in pairs(S.peds) do if DoesEntityExist(p) then ResetEntityAlpha(p) end end
+    else
+        clearPed()
+    end
+    cb(1)
+end)
 
 RegisterNUICallback('play', function(d, cb)
     local ch = findChar(d.id)
@@ -285,13 +365,27 @@ end)
 
 RegisterNUICallback('delete', function(d, cb)
     if lib.callback.await('kt-mc:delete', false, d.id) then
-        local data = lib.callback.await('kt-mc:data', false)
-        S.chars = data.chars
-        clearPed()
-        nui('refresh', { cfg = uiConfig(data), chars = trimChars(S.chars) })
+        S.data = lib.callback.await('kt-mc:data', false)
+        S.chars = S.data.chars
+        if Config.Preset == 'interactive' then showAll() else clearPed() end
+        openUI('refresh')
         return cb({ ok = true })
     end
     cb({ ok = false })
+end)
+
+RegisterNUICallback('camEffect', function(d, cb)
+    if type(d.effect) == 'string' and Effects[d.effect] ~= nil then applyEffect(d.effect) end
+    cb(1)
+end)
+
+RegisterNUICallback('saveSettings', function(d, cb)
+    SetResourceKvp('kt_mc_settings', json.encode({
+        volume = math.min(1.0, math.max(0.0, tonumber(d.volume) or 0.25)),
+        track = math.floor(tonumber(d.track) or 1),
+        effect = Effects[d.effect] ~= nil and d.effect or 'none',
+    }))
+    cb(1)
 end)
 
 ---------------------------------------------------------------- Finish (after login)
@@ -349,8 +443,6 @@ CreateThread(function()
     while not NetworkIsPlayerActive(PlayerId()) do Wait(100) end
     if lib.callback.await('kt-mc:ready', false) then startSelection() end
 end)
-
-if not GetResourceMetadata then end -- (no-op, kept for readability)
 
 AddEventHandler('onResourceStop', function(res)
     if res ~= GetCurrentResourceName() then return end
